@@ -142,8 +142,8 @@ def get_bebidas():
 
 #POST
 @app.route('/novo_aluno', methods=['POST'])
-@admin_required
-@jwt_required
+# @admin_required
+# @jwt_required
 def cadastrar_aluno():
 
     dados = request.get_json()
@@ -173,8 +173,8 @@ def cadastrar_aluno():
 
 
 @app.route('/novo_funcionario', methods=['POST'])
-@admin_required
-@jwt_required
+# @admin_required
+# @jwt_required
 def cadastrar_funcionario():
 
     dados = request.get_json()
@@ -203,8 +203,8 @@ def cadastrar_funcionario():
 
 
 @app.route('/novo_salgado', methods=['POST'])
-@admin_required
-@jwt_required
+# @admin_required
+# @jwt_required
 def cadastrar_salgado():
 
     dados = request.get_json()
@@ -229,8 +229,8 @@ def cadastrar_salgado():
 
 
 @app.route('/novo_doce', methods=['POST'])
-@admin_required
-@jwt_required
+# @admin_required
+# @jwt_required
 def cadastrar_doce():
     dados = request.get_json()
     db_session = local_session()
@@ -254,8 +254,8 @@ def cadastrar_doce():
 
 
 @app.route('/novo_bebida', methods=['POST'])
-@admin_required
-@jwt_required
+# @admin_required
+# @jwt_required
 def cadastrar_bebida():
 
     dados = request.get_json()
@@ -282,8 +282,8 @@ def cadastrar_bebida():
 
 #EDITAR
 @app.route('/editar_aluno/<id>', methods=['PUT', 'POST'])
-@admin_required
-@jwt_required
+# @admin_required
+# @jwt_required
 def editar_aluno(id):
 
     dados = request.get_json()
@@ -320,8 +320,8 @@ def editar_aluno(id):
         return jsonify({'erro': str(e)}), 400
 
 @app.route('/editar_funcionario/<id>', methods=['PUT', 'POST'])
-@admin_required
-@jwt_required
+# @admin_required
+# @jwt_required
 def editar_funcionario(id):
 
     dados = request.get_json()
@@ -354,8 +354,8 @@ def editar_funcionario(id):
         return jsonify({'erro': str(e)}), 400
 
 @app.route('/editar_salgado/<id>', methods=['PUT', 'POST'])
-@admin_required
-@jwt_required
+# @admin_required
+# @jwt_required
 def editar_salgado(id):
 
     dados = request.get_json()
@@ -384,8 +384,8 @@ def editar_salgado(id):
 
 
 @app.route('/editar_doce/<id>', methods=['PUT', 'POST'])
-@admin_required
-@jwt_required
+# @admin_required
+# @jwt_required
 def editar_doce(id):
 
     dados = request.get_json()
@@ -413,8 +413,8 @@ def editar_doce(id):
         return jsonify({'erro': str(e)}), 400
 
 @app.route('/editar_bebida/<id>', methods=['PUT', 'POST'])
-@admin_required
-@jwt_required
+# @admin_required
+# @jwt_required
 def editar_bebida(id):
 
     dados = request.get_json()
@@ -444,8 +444,8 @@ def editar_bebida(id):
 
 #PEDIDO
 @app.route('/pedido', methods=['GET'])
-@admin_required
-@jwt_required
+# @admin_required
+# @jwt_required
 def get_pedido():
     try:
         sql_pedido = select(Pedido)
