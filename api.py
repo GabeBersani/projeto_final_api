@@ -81,19 +81,19 @@ def cadastro_usuarios():
     email = dados.get('email')
     papel = dados.get('papel', 'aluno')
     senha = dados.get('senha')
-    cpf = 'none'
+    cpf = dados.get('cpf')  # CPF agora é opcional
 
     if not nome or not email or not senha:
         return jsonify({"msg": "Nome, email e senha são obrigatórios"}), 400
     if papel == "aluno" and not email.endswith("@aluno"):
         return jsonify({"msg": "Email de aluno deve terminar com '@aluno'"}), 400
 
-    logging.debug(f"Recebido cadastro de usuário: {dados}")
-
     banco = local_session()
     try:
+        # Verifica email duplicado
         if banco.execute(select(Usuario).where(Usuario.email == email)).scalar():
             return jsonify({"msg": "Usuário com esse email já existe"}), 400
+        # Verifica CPF apenas se informado
         if cpf and banco.execute(select(Usuario).where(Usuario.cpf == cpf)).scalar():
             return jsonify({"msg": "Usuário com esse CPF já existe"}), 400
 
@@ -102,18 +102,16 @@ def cadastro_usuarios():
         banco.add(novo_usuario)
         banco.commit()
 
-        logging.debug(f"Usuário {nome} registrado com sucesso!")
-
         return jsonify({
             "msg": "Usuário criado com sucesso",
             "user_id": novo_usuario.id_usuario
         }), 201
     except Exception as e:
         banco.rollback()
-        logging.error(f"Erro ao registrar usuário: {str(e)}")
         return jsonify({"msg": f"Erro ao registrar usuário: {str(e)}"}), 500
     finally:
         banco.close()
+
 
 
 # @app.route('/usuarios', methods=['POST'])
