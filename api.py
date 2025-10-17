@@ -3,11 +3,12 @@ from flask import Flask, jsonify, request
 from flask_jwt_extended import get_jwt_identity, JWTManager, create_access_token, jwt_required
 from functools import wraps
 from sqlalchemy import select
-from models import Usuario, Alimento, Pedido, local_session
+from models import Usuario, Alimento, Pedido, local_session, init_db
 
 app = Flask(__name__)
 app.config["JWT_SECRET_KEY"] = "super_senha"
 jwt = JWTManager(app)
+init_db()
 
 def admin_required(fn):
     @wraps(fn)
@@ -24,23 +25,23 @@ def admin_required(fn):
             db.close()
     return wrapper
 
-# Rota de boas-vindas
 @app.route('/')
 def index():
     return jsonify({'message': 'Welcome to Exemplo API!'})
 
-# Login
 @app.route('/login', methods=['POST'])
 def login():
     dados = request.get_json()
     email = dados.get('email')
     senha = dados.get('senha')
 
+    if not email or not senha:
+        return jsonify({"msg": "Email e senha obrigatórios"}), 400
+
     db = local_session()
     try:
         sql = select(Usuario).where(Usuario.email == email)
         user = db.execute(sql).scalar()
-
         if user and user.check_password(senha):
             access_token = create_access_token(identity=str(user.email))
             return jsonify({
@@ -53,26 +54,139 @@ def login():
     finally:
         db.close()
 
-# Listar alunos e funcionários (todos os usuários)
 @app.route('/alunos', methods=['GET'])
-# @jwt_required()
 def lista_pessoa():
     banco = local_session()
     try:
         sql = select(Usuario)
         tds_usuarios = banco.execute(sql).scalars()
         lista_usuarios = [usuario.serialize_usuario() for usuario in tds_usuarios]
-        # Remove senha_hash do retorno por segurança
-        for u in lista_usuarios:
-            if 'senha_hash' in u:
-                del u['senha_hash']
         return jsonify({"usuarios": lista_usuarios}), 200
     except Exception as e:
         return jsonify({"msg": f"Erro ao listar usuário: {str(e)}"}), 500
     finally:
         banco.close()
 
-# Listar alimentos (qualquer um pode acessar)
+
+import logging
+
+logging.basicConfig(level=logging.DEBUG)
+
+
+@app.route('/usuarios', methods=['POST'])
+def cadastro_usuarios():
+    dados = request.get_json()
+
+    nome = dados.get('nome')
+    email = dados.get('email')
+    papel = dados.get('papel', 'aluno')
+    senha = dados.get('senha')
+    cpf = 'none'
+
+    if not nome or not email or not senha:
+        return jsonify({"msg": "Nome, email e senha são obrigatórios"}), 400
+    if papel == "aluno" and not email.endswith("@aluno"):
+        return jsonify({"msg": "Email de aluno deve terminar com '@aluno'"}), 400
+
+    logging.debug(f"Recebido cadastro de usuário: {dados}")
+
+    banco = local_session()
+    try:
+        if banco.execute(select(Usuario).where(Usuario.email == email)).scalar():
+            return jsonify({"msg": "Usuário com esse email já existe"}), 400
+        if cpf and banco.execute(select(Usuario).where(Usuario.cpf == cpf)).scalar():
+            return jsonify({"msg": "Usuário com esse CPF já existe"}), 400
+
+        novo_usuario = Usuario(nome=nome, email=email, papel=papel, cpf=cpf)
+        novo_usuario.set_senha_hash(senha)
+        banco.add(novo_usuario)
+        banco.commit()
+
+        logging.debug(f"Usuário {nome} registrado com sucesso!")
+
+        return jsonify({
+            "msg": "Usuário criado com sucesso",
+            "user_id": novo_usuario.id_usuario
+        }), 201
+    except Exception as e:
+        banco.rollback()
+        logging.error(f"Erro ao registrar usuário: {str(e)}")
+        return jsonify({"msg": f"Erro ao registrar usuário: {str(e)}"}), 500
+    finally:
+        banco.close()
+
+
+# @app.route('/usuarios', methods=['POST'])
+# def cadastro_usuarios():
+#     dados = request.get_json()
+#     nome = dados.get('nome')
+#     email = dados.get('email')
+#     papel = dados.get('papel', 'aluno')
+#     senha = dados.get('senha')
+#     cpf = dados.get('cpf', None)
+#
+#     if not nome or not email or not senha:
+#         return jsonify({"msg": "Nome, email e senha são obrigatórios"}), 400
+#
+#     if papel == "aluno" and not email.endswith("@aluno"):
+#         return jsonify({"msg": "Email de aluno deve terminar com '@aluno'"}), 400
+#
+#     banco = local_session()
+#     try:
+#         if banco.execute(select(Usuario).where(Usuario.email == email)).scalar():
+#             return jsonify({"msg": "Usuário com esse email já existe"}), 400
+#         if cpf and banco.execute(select(Usuario).where(Usuario.cpf == cpf)).scalar():
+#             return jsonify({"msg": "Usuário com esse CPF já existe"}), 400
+#
+#         novo_usuario = Usuario(nome=nome, email=email, papel=papel, cpf=cpf)
+#         novo_usuario.set_senha_hash(senha)
+#         banco.add(novo_usuario)
+#         banco.commit()
+#         return jsonify({"msg": "Usuário criado com sucesso", "user_id": novo_usuario.id_usuario}), 201
+#     # except Exception as e:
+#     #     banco.rollback()
+#     #     return jsonify({"msg": f"Erro ao registrar usuário: {str(e)}"}), 500
+#     except Exception as e:
+#         banco.rollback()
+#         print(f"Erro ao registrar usuário: {str(e)}")  # Para debugar
+#         return jsonify({"msg": f"Erro ao registrar usuário: {str(e)}"}), 500
+#     finally:
+#         banco.close()
+
+
+# @app.route('/usuarios', methods=['POST'])
+# def cadastro_usuarios():
+#     dados = request.get_json()
+#     nome = dados.get('nome')
+#     email = dados.get('email')
+#     papel = dados.get('papel', 'aluno')
+#     senha = dados.get('senha')
+#     cpf = dados.get('cpf', None)
+#
+#     if not nome or not email or not senha:
+#         return jsonify({"msg": "Nome, email e senha são obrigatórios"}), 400
+#
+#     if not email.endswith("@aluno"):
+#         return jsonify({"msg": "Email deve terminar com '@aluno'"}), 400
+#
+#     banco = local_session()
+#     try:
+#         if banco.execute(select(Usuario).where(Usuario.email == email)).scalar():
+#             return jsonify({"msg": "Usuário com esse email já existe"}), 400
+#         if cpf and banco.execute(select(Usuario).where(Usuario.cpf == cpf)).scalar():
+#             return jsonify({"msg": "Usuário com esse CPF já existe"}), 400
+#
+#         novo_usuario = Usuario(nome=nome, email=email, papel=papel, cpf=cpf)
+#         novo_usuario.set_senha_hash(senha)
+#         banco.add(novo_usuario)
+#         banco.commit()
+#         return jsonify({"msg": "Usuário criado com sucesso", "user_id": novo_usuario.id_usuario}), 201
+#     except Exception as e:
+#         banco.rollback()
+#         return jsonify({"msg": f"Erro ao registrar usuário: {str(e)}"}), 500
+#     finally:
+#         banco.close()
+
 @app.route('/alimento', methods=['GET'])
 def get_alimento():
     db_session = local_session()
@@ -81,50 +195,13 @@ def get_alimento():
         resultado_alimento = db_session.execute(sql_alimento).scalars()
         lista_alimento = []
         for alimento in resultado_alimento:
-            alimento_data = alimento.serialize_alimento()
-            alimento_data["id_alimento"] = alimento.id_alimento
-            lista_alimento.append(alimento_data)
+            lista_alimento.append(alimento.serialize_alimento())
         return jsonify({'alimento': lista_alimento}), 200
     except Exception as e:
         return jsonify({'erro': str(e)}), 500
     finally:
         db_session.close()
 
-@app.route('/usuarios', methods=['POST'])
-# @jwt_required()
-# @admin_required
-def cadastro_usuarios():
-    dados = request.get_json()
-    nome = dados.get('nome')
-    cpf = dados.get('cpf')
-    email = dados.get('email')
-    papel = dados.get('papel', 'aluno')
-    senha = dados.get('senha_hash')
-
-    if not nome or not email or not senha:
-        return jsonify({"msg": "Nome, email e senha são obrigatórios"}), 400
-
-    banco = local_session()
-    try:
-        # Verifica se já existe usuário com o email
-        user_check = select(Usuario).where(Usuario.email == email)
-        usuario_existente = banco.execute(user_check).scalar()
-        if usuario_existente:
-            return jsonify({"msg": "Usuário já existe"}), 400
-
-        novo_usuario = Usuario(nome=nome, cpf=cpf, email=email, papel=papel)
-        novo_usuario.set_senha_hash(senha)
-        banco.add(novo_usuario)
-        banco.commit()
-
-        return jsonify({"msg": "Usuário criado com sucesso", "user_id": novo_usuario.id_usuario}), 201
-    except Exception as e:
-        banco.rollback()
-        return jsonify({"msg": f"Erro ao registrar usuário: {str(e)}"}), 500
-    finally:
-        banco.close()
-
-# Cadastrar alimento (somente funcionário)
 @app.route('/novo_alimento', methods=['POST'])
 # @jwt_required()
 # @admin_required
@@ -132,33 +209,112 @@ def cadastrar_alimento():
     dados = request.get_json()
     db_session = local_session()
     try:
-        required_fields = ['nome', 'valor', 'quantidade', 'marca', 'categoria', 'descricao']
-        if not all(dados.get(field) for field in required_fields):
+        campos = ['nome', 'valor', 'quantidade', 'marca', 'categoria', 'descricao']
+        if not all(dados.get(c) is not None for c in campos):
             return jsonify({'erro': "Todos os campos são obrigatórios"}), 400
 
         categoria = dados['categoria'].lower()
         if categoria not in ['bebida', 'doce', 'salgado']:
             return jsonify({'erro': "Categoria inválida. Use: bebida, doce ou salgado"}), 400
 
-        novo_alimento = Alimento(
+        novo = Alimento(
             nome=dados['nome'],
-            valor=dados['valor'],
-            quantidade=dados['quantidade'],
+            valor=float(dados['valor']),
+            quantidade=int(dados['quantidade']),
             categoria=categoria,
             descricao=dados['descricao'],
             marca=dados['marca']
         )
-        novo_alimento.save(db_session)
-        alimento_response = novo_alimento.serialize_alimento()
-        alimento_response["id_alimento"] = novo_alimento.id_alimento
-        return jsonify(alimento_response), 201
+        novo.save(db_session)
+        retorno = novo.serialize_alimento()
+        retorno["id_alimento"] = novo.id_alimento
+        return jsonify(retorno), 201
     except Exception as e:
         return jsonify({'erro': str(e)}), 400
     finally:
         db_session.close()
 
+@app.route('/pedido', methods=['GET'])
+def get_pedido():
+    db_session = local_session()
+    try:
+        sql_pedido = select(Pedido)
+        resultado = db_session.execute(sql_pedido).scalars()
+        lista = [p.serialize_pedido() for p in resultado]
+        return jsonify({'pedido': lista}), 200
+    except Exception as e:
+        return jsonify({'erro': str(e)}), 500
+    finally:
+        db_session.close()
+
+@app.route('/novo_pedido', methods=['POST'])
+def cadastrar_pedido():
+    dados = request.get_json()
+    db_session = local_session()
+    try:
+        pedidos = dados.get("pedidos")
+        nome_aluno = dados.get("nome_aluno")
+
+        if not pedidos or not nome_aluno:
+            return jsonify({'erro': "Dados incompletos"}), 400
+
+        for item in pedidos:
+            if not all(k in item for k in ['nome', 'valor', 'quantidade']):
+                return jsonify({'erro': "Cada item precisa de nome, valor e quantidade"}), 400
+
+            # Buscar o id_alimento pelo nome do alimento
+            alimento = db_session.execute(select(Alimento).where(Alimento.nome == item['nome'])).scalar()
+            if not alimento:
+                return jsonify({'erro': f'Alimento {item["nome"]} não encontrado'}), 404
+
+            novo = Pedido(
+                nome_aluno=nome_aluno,
+                nome_pedido=item['nome'],
+                valor_pedido=float(item['valor']),
+                quantidade_pedido=int(item['quantidade']),
+                id_alimento=alimento.id_alimento
+            )
+            db_session.add(novo)
+
+        db_session.commit()
+        return jsonify({'msg': 'Pedidos cadastrados com sucesso'}), 201
+    except Exception as e:
+        db_session.rollback()
+        return jsonify({'erro': str(e)}), 400
+    finally:
+        db_session.close()
+
+@app.route('/finalizar_pedido/<int:id_pedido>', methods=['POST'])
+def finalizar_pedido(id_pedido):
+    dados = request.get_json()
+    metodo = dados.get('metodo_pagamento')
+    if metodo is None:
+        return jsonify({'erro': "Método de pagamento deve ser informado"}), 400
+
+    metodo = metodo.lower()
+    if metodo not in ['pix', 'dinheiro']:
+        return jsonify({'erro': "Método de pagamento inválido"}), 400
+
+    db_session = local_session()
+    try:
+        pedido = db_session.query(Pedido).filter(Pedido.id_pedido == id_pedido).first()
+        if not pedido:
+            return jsonify({'erro': "Pedido não encontrado"}), 404
+
+        pedido.status_pagamento = 'pago'
+        db_session.commit()
+
+        return jsonify({
+            'msg': 'Pedido pago com sucesso!',
+            'id_pedido': pedido.id_pedido
+        }), 200
+    except Exception as e:
+        db_session.rollback()
+        return jsonify({'erro': str(e)}), 500
+    finally:
+        db_session.close()
+
 @app.route('/editar_usuario/<int:id>', methods=['PUT', 'POST'])
-# @jwt_required()
 def editar_usuario(id):
     dados = request.get_json()
     db_session = local_session()
@@ -188,7 +344,6 @@ def editar_usuario(id):
             db_session.add(usuario)
             db_session.commit()
             usuario_response = usuario.serialize_usuario()
-            # Remove senha_hash do retorno
             if 'senha_hash' in usuario_response:
                 del usuario_response['senha_hash']
             return jsonify(usuario_response), 200
@@ -199,10 +354,9 @@ def editar_usuario(id):
     finally:
         db_session.close()
 
-# Editar alimento (somente funcionário)
 @app.route('/editar_alimento/<int:id>', methods=['PUT', 'POST'])
-# @jwt_required()
-# @admin_required
+@jwt_required()
+@admin_required
 def editar_alimento(id):
     dados = request.get_json()
     db_session = local_session()
@@ -242,49 +396,6 @@ def editar_alimento(id):
         return jsonify({"msg": "Nenhuma alteração realizada"}), 200
     except Exception as e:
         db_session.rollback()
-        return jsonify({'erro': str(e)}), 400
-    finally:
-        db_session.close()
-
-# Listar pedidos (qualquer um pode consultar)
-@app.route('/pedido', methods=['GET'])
-def get_pedido():
-    db_session = local_session()
-    try:
-        sql_pedido = select(Pedido)
-        resultado_pedido = db_session.execute(sql_pedido).scalars()
-        lista_pedido = []
-        for pedido in resultado_pedido:
-            pedido_data = pedido.serialize_pedido()
-            pedido_data["id_pedido"] = pedido.id_pedido
-            lista_pedido.append(pedido_data)
-        return jsonify({'pedido': lista_pedido}), 200
-    except Exception as e:
-        return jsonify({'erro': str(e)}), 500
-    finally:
-        db_session.close()
-
-# Cadastrar pedido (qualquer usuário pode criar pedido)
-@app.route('/novo_pedido', methods=['POST'])
-def cadastrar_pedido():
-    dados = request.get_json()
-    db_session = local_session()
-    try:
-        required_fields = ['nome_aluno', 'nome_pedido', 'valor_pedido', 'quantidade_pedido']
-        if not all(dados.get(field) for field in required_fields):
-            return jsonify({'erro': "Todos os campos são obrigatórios"}), 400
-
-        novo_pedido = Pedido(
-            nome_aluno=dados['nome_aluno'],
-            nome_pedido=dados['nome_pedido'],
-            valor_pedido=dados['valor_pedido'],
-            quantidade_pedido=dados['quantidade_pedido']
-        )
-        novo_pedido.save(db_session)
-        pedido_response = novo_pedido.serialize_pedido()
-        pedido_response["id_pedido"] = novo_pedido.id_pedido
-        return jsonify(pedido_response), 201
-    except Exception as e:
         return jsonify({'erro': str(e)}), 400
     finally:
         db_session.close()
