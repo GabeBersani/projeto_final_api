@@ -3,30 +3,29 @@ from sqlalchemy.orm import sessionmaker, declarative_base, relationship
 from werkzeug.security import generate_password_hash, check_password_hash
 from sqlalchemy.exc import SQLAlchemyError
 import datetime
-
-# --- Configuração do Banco de Dados ---
+from flask_login import UserMixin
 Base = declarative_base()
 engine = create_engine('sqlite:///database.db')
-# SessionLocal deve ser uma classe de sessão
 SessionLocal = sessionmaker(bind=engine)
-
-
-# Função auxiliar para o gerenciamento de sessão na API
 def local_session():
-    """Retorna uma nova sessão de banco de dados."""
     return SessionLocal()
 
 
-# --- Classes de Modelo ---
-class Usuario(Base):
+
+class Usuario(UserMixin, Base):
     __tablename__ = 'USUARIO'
 
     id_usuario = Column(Integer, primary_key=True)
     nome = Column(String(40), nullable=False)
-    # CPF REMOVIDO
     email = Column(String, nullable=False, unique=True)
     senha_hash = Column(String, nullable=False)
     papel = Column(String, default='aluno', nullable=False)
+
+    def __init__(self, nome, email, senha_hash = None, papel='aluno'):
+        self.nome = nome
+        self.email = email
+        self.senha_hash = senha_hash
+        self.papel = papel
 
     def set_senha_hash(self, senha):
         self.senha_hash = generate_password_hash(senha)
@@ -54,7 +53,6 @@ class Alimento(Base):
     marca = Column(String, nullable=False)
     descricao = Column(String, nullable=False)
 
-    # Adicionando back_populates corretamente para o relacionamento
     pedidos = relationship("Pedido", back_populates="alimento")
 
     def __repr__(self):
@@ -80,12 +78,8 @@ class Pedido(Base):
     nome_pedido = Column(String(40), nullable=False)
     valor_pedido = Column(Float, nullable=False)
     quantidade_pedido = Column(Integer, nullable=False)
-
     id_alimento = Column(Integer, ForeignKey('ALIMENTO.id_alimento'), nullable=False)
-
-    # Adicionando back_populates corretamente para o relacionamento
     alimento = relationship("Alimento", back_populates="pedidos")
-
     status_pagamento = Column(String, default='pendente', nullable=False)
 
     def __repr__(self):
@@ -102,8 +96,6 @@ class Pedido(Base):
             'status_pagamento': self.status_pagamento,
         }
 
-
-# --- Funções de Inicialização ---
 def init_db():
     """Cria as tabelas no banco de dados se não existirem."""
     try:

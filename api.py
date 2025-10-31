@@ -1,26 +1,45 @@
 import logging
 from functools import wraps
+# from tkinter.tix import Select
+
 from flask import Flask, jsonify, request
+from flask_cors import CORS
 from flask_jwt_extended import get_jwt_identity, JWTManager, create_access_token, jwt_required
+from flask_pydantic_spec import FlaskPydanticSpec
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from sqlalchemy.orm import joinedload
+from flask_login import LoginManager, UserMixin, current_user, login_user, logout_user, login_required
+from werkzeug.security import check_password_hash
 
-# Importa os modelos e a função de sessão do seu arquivo models.py
 from models import Usuario, Alimento, Pedido, local_session, init_db
 
-# --- Configuração Inicial ---
+
 app = Flask(__name__)
-# É altamente recomendável usar variáveis de ambiente para a chave secreta em produção!
 app.config["JWT_SECRET_KEY"] = "super_senha"
+app.config['JWT_SECRET_KEY'] = 'super_senha'
 jwt = JWTManager(app)
-logging.basicConfig(level=logging.INFO)
+CORS(app)
+spec = FlaskPydanticSpec('flask', title='API - AROMA & SABOR', version='1.0.0')
 
-# Inicializa o banco de dados (cria tabelas se não existirem)
-init_db()
+# login_manager = LoginManager()
+# login_manager.init_app(app)
+
+# @login_manager.user_loader
+# def load_user(user_id):
+#     db_session = local_session()
+#     sql = db_session.execute(select(Usuario).filter_by(id=user_id))
+#     return sql.get(int(user_id))
+#
+# def validar_usuario(email, senha):
+#     sql = select(Usuario).filter_by(email=email)
+#     if not sql:
+#         return None
+#     if check_password_hash(sql.senha, senha):
+#         return sql
 
 
-# --- Decoradores Personalizados de Autorização ---
+
 def admin_required(fn):
     """Protege a rota, exigindo que o usuário logado tenha o papel de 'funcionario'."""
 
@@ -30,14 +49,10 @@ def admin_required(fn):
         current_user_email = get_jwt_identity()
         db = local_session()
         try:
-            # Busca o usuário pelo email (identity do JWT)
-            # Uso de .scalar_one_or_none() é a forma moderna e segura de obter um único resultado
             user = db.execute(select(Usuario).where(Usuario.email == current_user_email)).scalar_one_or_none()
 
             if user and user.papel == "funcionario":
                 return fn(*args, **kwargs)
-
-            # Se não for funcionário ou não for encontrado
             return jsonify(msg="Acesso negado: Requer privilégios de funcionário"), 403
         except Exception as e:
             logging.error(f"Erro na autorização do funcionário: {e}")
@@ -48,12 +63,9 @@ def admin_required(fn):
     return wrapper
 
 
-# --- Rotas de Autenticação e Usuário ---
-
 @app.route('/')
 def index():
     return jsonify({'message': 'Welcome to Exemplo API!'})
-
 
 @app.route('/login', methods=['POST'])
 def login():
@@ -86,11 +98,13 @@ def login():
 
 
 @app.route('/alunos', methods=['GET'])
+# @jwt_required()
 def lista_usuarios():
     db = local_session()
     try:
         tds_usuarios = db.execute(select(Usuario)).scalars().all()
         lista_usuarios = [usuario.serialize_usuario() for usuario in tds_usuarios]
+        print(lista_usuarios)
         return jsonify({"usuarios": lista_usuarios}), 200
 
     except Exception as e:
@@ -103,12 +117,11 @@ def lista_usuarios():
 
 @app.route('/usuarios', methods=['POST'])
 def cadastro_usuarios():
-    """Cadastra um novo usuário. CPF removido."""
-    dados = request.get_json()
 
+    dados = request.get_json()
     nome = dados.get('nome')
     email = dados.get('email')
-    papel = dados.get('papel', 'aluno')  # Default 'aluno'
+    papel = dados.get('papel', 'aluno')
     senha = dados.get('senha')
 
     if not nome or not email or not senha:
@@ -119,11 +132,8 @@ def cadastro_usuarios():
 
     db = local_session()
     try:
-        # Checagem de email duplicado
         if db.execute(select(Usuario).where(Usuario.email == email)).scalar_one_or_none():
             return jsonify({"msg": "Usuário com esse email já existe"}), 400
-
-        # Criação do usuário sem passar o CPF
         novo_usuario = Usuario(nome=nome, email=email, papel=papel)
         novo_usuario.set_senha_hash(senha)
 
@@ -166,8 +176,6 @@ def editar_usuario(id):
             usuario.nome = dados['nome']
             updated = True
 
-        # CPF REMOVIDO
-
         if 'email' in dados and dados['email'] is not None and dados['email'] != usuario.email:
             # Valida e-mail duplicado
             if db.execute(select(Usuario).where(Usuario.email == dados['email'])).scalar_one_or_none():
@@ -197,11 +205,6 @@ def editar_usuario(id):
     finally:
         db.close()
 
-
-# ==============================================================================
-# ROTAS DE ALIMENTO
-# ==============================================================================
-
 @app.route('/alimento', methods=['GET'])
 def get_alimento():
     db = local_session()
@@ -219,8 +222,8 @@ def get_alimento():
 
 
 @app.route('/novo_alimento', methods=['POST'])
-# @jwt_required()
-# @admin_required
+@jwt_required()
+@admin_required
 def cadastrar_alimento():
     dados = request.get_json()
     db = local_session()
@@ -233,11 +236,9 @@ def cadastrar_alimento():
         if categoria not in ['bebida', 'doce', 'salgado']:
             return jsonify({'erro': "Categoria inválida. Use: bebida, doce ou salgado"}), 400
 
-        # Validação de nome duplicado
         if db.execute(select(Alimento).where(Alimento.nome == dados['nome'])).scalar_one_or_none():
             return jsonify({'erro': "Alimento com este nome já existe"}), 400
 
-        # Conversão de tipos
         valor = float(dados['valor'])
         quantidade = int(dados['quantidade'])
 
@@ -328,16 +329,10 @@ def editar_alimento(id):
     finally:
         db.close()
 
-
-# ==============================================================================
-# ROTAS DE PEDIDO
-# ==============================================================================
-
 @app.route('/pedido', methods=['GET'])
 def get_pedido():
     db = local_session()
     try:
-        # Uso de joinedload para carregar a relação (alimento) em uma query se a relação existir
         resultado = db.execute(select(Pedido).options(joinedload(Pedido.alimento))).scalars().all()
         lista = [p.serialize_pedido() for p in resultado]
         return jsonify({'pedidos': lista}), 200
@@ -381,7 +376,6 @@ def cadastrar_pedido():
                 db.rollback()
                 return jsonify({'erro': f'Alimento {item["nome"]} não encontrado no estoque'}), 404
 
-            # Verificação de estoque antes de cadastrar o pedido
             if alimento.quantidade < quantidade:
                 db.rollback()
                 return jsonify(
@@ -434,8 +428,6 @@ def finalizar_pedido(id_pedido):
             return jsonify({'msg': 'Pedido já está pago.'}), 200
 
         alimento = db.get(Alimento, pedido.id_alimento)
-
-        # Checagem de estoque e integridade
         if not alimento:
             db.rollback()
             return jsonify({'erro': "Alimento do pedido não encontrado no estoque"}), 404
@@ -446,10 +438,8 @@ def finalizar_pedido(id_pedido):
 
         # 1. Baixa no estoque
         alimento.quantidade -= pedido.quantidade_pedido
-
         # 2. Atualiza o status do pedido
         pedido.status_pagamento = 'pago'
-
         # Commit da transação (pedido e estoque)
         db.commit()
 
