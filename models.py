@@ -97,7 +97,6 @@ class Pedido(Base):
         }
 
 def init_db():
-    """Cria as tabelas no banco de dados se não existirem."""
     try:
         Base.metadata.create_all(bind=engine)
         print("Tabelas criadas com sucesso ou já existentes.")

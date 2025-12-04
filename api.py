@@ -1,7 +1,5 @@
 import logging
 from functools import wraps
-# from tkinter.tix import Select
-
 from flask import Flask, jsonify, request
 from flask_cors import CORS
 from flask_jwt_extended import get_jwt_identity, JWTManager, create_access_token, jwt_required
@@ -9,10 +7,10 @@ from flask_pydantic_spec import FlaskPydanticSpec
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from sqlalchemy.orm import joinedload
-from flask_login import LoginManager, UserMixin, current_user, login_user, logout_user, login_required
-from werkzeug.security import check_password_hash
 
-from models import Usuario, Alimento, Pedido, local_session, init_db
+from models import Usuario, Alimento, Pedido, local_session
+
+from sqlalchemy import func, desc
 
 
 app = Flask(__name__)
@@ -22,27 +20,8 @@ jwt = JWTManager(app)
 CORS(app)
 spec = FlaskPydanticSpec('flask', title='API - AROMA & SABOR', version='1.0.0')
 
-# login_manager = LoginManager()
-# login_manager.init_app(app)
-
-# @login_manager.user_loader
-# def load_user(user_id):
-#     db_session = local_session()
-#     sql = db_session.execute(select(Usuario).filter_by(id=user_id))
-#     return sql.get(int(user_id))
-#
-# def validar_usuario(email, senha):
-#     sql = select(Usuario).filter_by(email=email)
-#     if not sql:
-#         return None
-#     if check_password_hash(sql.senha, senha):
-#         return sql
-
-
 
 def admin_required(fn):
-    """Protege a rota, exigindo que o usuário logado tenha o papel de 'funcionario'."""
-
     @wraps(fn)
     @jwt_required()
     def wrapper(*args, **kwargs):
@@ -69,6 +48,14 @@ def index():
 
 @app.route('/login', methods=['POST'])
 def login():
+    """
+    API para autenticar um usuário e gerar um token de acesso JWT.
+    {
+        "email": "email_do_usuario",
+        "senha": "senha_do_usuario"
+    }
+    """
+
     dados = request.get_json()
     email = dados.get('email')
     senha = dados.get('senha')
@@ -98,8 +85,24 @@ def login():
 
 
 @app.route('/alunos', methods=['GET'])
-# @jwt_required()
+@jwt_required()
+@admin_required
 def lista_usuarios():
+    """
+    API para listar todos os usuários cadastrados.
+
+    Retorna:
+    {
+        "usuarios": [
+            {
+                "email": "usuario1@exemplo.com",
+                "id_usuario": 1,
+                "nome": "Usuário Um",
+                "papel": "aluno" / funcionario
+            }
+        ]
+    }
+    """
     db = local_session()
     try:
         tds_usuarios = db.execute(select(Usuario)).scalars().all()
@@ -117,6 +120,22 @@ def lista_usuarios():
 
 @app.route('/usuarios', methods=['POST'])
 def cadastro_usuarios():
+    """
+    API para cadastrar um novo usuário no sistema.
+
+    {
+        "nome": "Novo Usuário",
+        "email": "novo@aluno",
+        "senha": "senha",
+        "papel": "aluno"
+    }
+
+    Retorna (Sucesso - 201):
+    {
+        "msg": "Usuário criado com sucesso",
+        "user_id": 10
+    }
+    """
 
     dados = request.get_json()
     nome = dados.get('nome')
@@ -160,8 +179,26 @@ def cadastro_usuarios():
 
 @app.route('/editar_usuario/<int:id>', methods=['PUT'])
 @jwt_required()
+@admin_required
 def editar_usuario(id):
-    """Edita os dados de um usuário. CPF removido."""
+    """
+    API para editar os dados de um usuário pelo ID.
+
+    (Campos Opcionais):
+    {
+        "nome": "novo nome",
+        "email": "novo_email@exemplo.com",
+        "senha": "nova_senha"
+    }
+
+    Retorna (Sucesso - 200):
+    {
+        "email": "novo_email@exemplo.com",
+        "id_usuario": 1,
+        "nome": "Nome Atualizado",
+        "papel": "aluno"
+    }
+    """
     dados = request.get_json()
     db = local_session()
 
@@ -207,6 +244,24 @@ def editar_usuario(id):
 
 @app.route('/alimento', methods=['GET'])
 def get_alimento():
+    """
+    API para listar todos os alimentos (produtos) disponíveis.
+
+    {
+        "alimento": [
+            {
+                "categoria": "doce",
+                "descricao": "Chocolate ao leite",
+                "id_alimento": 1,
+                "marca": "Choc",
+                "nome": "Chocolate",
+                "quantidade": 50,
+                "valor": 5.5
+            }
+        ]
+    }
+    """
+
     db = local_session()
     try:
         resultado_alimento = db.execute(select(Alimento)).scalars().all()
@@ -225,6 +280,30 @@ def get_alimento():
 @jwt_required()
 @admin_required
 def cadastrar_alimento():
+    """
+    API para adicionar um novo alimento ao estoque. Requer que seja funcionário.
+
+    {
+        "nome": "Refrigerante Coca",
+        "valor": 7.00,
+        "quantidade": 100,
+        "marca": "Refri",
+        "categoria": "bebida",
+        "descricao": "Lata de 350ml"
+    }
+
+    Sucesso - 201:
+    {
+        "categoria": "bebida",
+        "descricao": "Lata de 350ml",
+        "id_alimento": 5,
+        "marca": "Refri",
+        "nome": "Refrigerante Coca",
+        "quantidade": 100,
+        "valor": 7.0
+    }
+    """
+
     dados = request.get_json()
     db = local_session()
     try:
@@ -273,6 +352,25 @@ def cadastrar_alimento():
 @jwt_required()
 @admin_required
 def editar_alimento(id):
+    """
+    API para editar os dados de um alimento pelo ID. Requer que seja funcionário.
+    {
+        "quantidade": 80,
+        "valor": 7.50,
+        "categoria": "doce"
+    }
+
+    Retorna (Sucesso - 200):
+    {
+        "categoria": "doce",
+        "descricao": "Chocolate ao leite",
+        "id_alimento": 1,
+        "marca": "Choc",
+        "nome": "Chocolate",
+        "quantidade": 80,
+        "valor": 7.5
+    }
+    """
     dados = request.get_json()
     db = local_session()
     try:
@@ -331,6 +429,23 @@ def editar_alimento(id):
 
 @app.route('/pedido', methods=['GET'])
 def get_pedido():
+    """
+    API para listar todos os pedidos realizados.
+
+    {
+        "pedidos": [
+            {
+                "id_alimento": 1,
+                "id_pedido": 1,
+                "nome_aluno": "Aluno",
+                "nome_pedido": "Chocolate",
+                "quantidade_pedido": 2,
+                "status_pagamento": "pendente",
+                "valor_pedido": 5.5
+            }
+        ]
+    }
+    """
     db = local_session()
     try:
         resultado = db.execute(select(Pedido).options(joinedload(Pedido.alimento))).scalars().all()
@@ -347,6 +462,36 @@ def get_pedido():
 
 @app.route('/novo_pedido', methods=['POST'])
 def cadastrar_pedido():
+    """
+    API para criar um ou mais pedidos, validando estoque e registrando o aluno.
+
+    {
+        "nome_aluno": "Gabriele",
+        "pedidos": [
+            {
+                "nome": "Chocolate",
+                "valor": 5.5,
+                "quantidade": 1
+            }
+        ]
+    }
+
+    Sucesso - 201:
+    {
+        "msg": "Pedidos cadastrados com sucesso",
+        "pedidos": [
+            {
+                "id_alimento": 1,
+                "id_pedido": 20,
+                "nome_aluno": "Gabriele",
+                "nome_pedido": "Chocolate",
+                "quantidade_pedido": 1,
+                "status_pagamento": "pendente",
+                "valor_pedido": 5.5
+            }
+        ]
+    }
+    """
     dados = request.get_json()
     db = local_session()
 
@@ -404,9 +549,22 @@ def cadastrar_pedido():
 
 
 @app.route('/finalizar_pedido/<int:id_pedido>', methods=['POST'])
-@jwt_required()
-@admin_required
 def finalizar_pedido(id_pedido):
+    """
+    API para marcar um pedido como pago e dar baixa no estoque.
+
+    {
+        "metodo_pagamento": "pix" // Opções: 'pix', 'dinheiro', 'cartao'
+    }
+
+    Sucesso - 200:
+    {
+        "msg": "Pedido pago e estoque atualizado com sucesso!",
+        "id_pedido": 1,
+        "metodo_pagamento": "pix",
+        "status_novo": "pago"
+    }
+    """
     dados = request.get_json()
     metodo = dados.get('metodo_pagamento')
 
@@ -454,6 +612,60 @@ def finalizar_pedido(id_pedido):
         db.rollback()
         logging.error(f"Erro ao finalizar pedido: {e}")
         return jsonify({'erro': "Erro interno ao finalizar pedido"}), 500
+
+    finally:
+        db.close()
+
+# para fazer o grafico naaplicação web
+@app.route('/produtos_mais_vendidos', methods=["GET"])
+@jwt_required()
+@admin_required
+def grafico_produtos_mais_vendidos():
+    """
+    API para listar os 5 produtos mais vendidos.
+
+    Retorna:
+    {
+        "produtos_mais_vendidos": [
+            {
+                "nome": "Produto A",
+                "quantidade": 50,
+                "valor": 10.0,
+                "lucro": 500.0
+            }
+        ]
+    }
+    """
+    db = local_session()
+    try:
+        resultado = (
+            db.query(
+                Pedido.id_alimento,
+                Alimento.nome,
+                Alimento.valor,
+                func.sum(Pedido.quantidade_pedido).label("quantidade_total")
+            )
+            .join(Alimento, Pedido.id_alimento == Alimento.id_alimento)
+            .group_by(Pedido.id_alimento)
+            .order_by(desc("quantidade_total"))
+            .limit(5)  #os 5 mais vendidos
+            .all()
+        )
+
+        produtos = []
+        for item in resultado:
+            produtos.append({
+                "nome": item.nome,
+                "quantidade": int(item.quantidade_total),
+                "valor": float(item.valor),
+                "lucro": float(item.valor * item.quantidade_total)
+            })
+
+        return jsonify({"produtos_mais_vendidos": produtos}), 200
+
+    except Exception as e:
+        db.rollback()
+        return jsonify({"erro": str(e)}), 500
 
     finally:
         db.close()
